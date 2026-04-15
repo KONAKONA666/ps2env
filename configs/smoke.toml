@@ -1,0 +1,30 @@
+[game]
+iso_path = "/workspace/game/game.iso"
+bios_dir = "/workspace/bios"
+bios_file = ""
+fastboot = true
+
+[workers]
+count = 1
+duration_seconds = 30
+display_base = 90
+pine_slot_base = 28011
+
+[gpu]
+renderer = "vulkan"
+vendor = "NVIDIA"
+
+[input]
+action_interval_ms = 250
+press_duration_ms = 80
+pause_hotkey = "F10"
+frame_advance_hotkey = "F11"
+
+[capture]
+width = 1280
+height = 720
+framerate = 60
+
+[logging]
+level = "INFO"
+

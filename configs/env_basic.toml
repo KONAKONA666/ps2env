@@ -1,0 +1,48 @@
+[game]
+iso_path = "/workspace/game/game.iso"
+bios_dir = "/workspace/bios"
+bios_file = ""
+fastboot = true
+startup_check = "startup_ready"
+episode_check = "episode_ready"
+step_checks = ["step_limit"]
+checks_dir = "../user_env/basic_ps2/checks"
+callbacks_dir = "../user_env/basic_ps2/callbacks"
+policy_dir = "../user_env/basic_ps2/policy"
+env_utils = "../user_env/basic_ps2/env_utils.py"
+
+[workers]
+count = 1
+duration_seconds = 30
+display_base = 90
+pine_slot_base = 28011
+
+[gpu]
+renderer = "vulkan"
+vendor = "NVIDIA"
+
+[input]
+action_interval_ms = 250
+press_duration_ms = 80
+pause_hotkey = "F10"
+frame_advance_hotkey = "F11"
+action_labels = ["noop", "up", "down", "left", "right", "cross", "circle", "square", "triangle", "start"]
+
+[capture]
+width = 1280
+height = 720
+framerate = 60
+game_fps = 60
+observation_shape = [180, 320]
+
+[stepping]
+n_frames_per_step = 4
+after_action = "hold"
+capture_action = false
+
+[lifecycle]
+frames_per_loop = 4
+timeout_frames = 1440
+
+[logging]
+level = "INFO"
