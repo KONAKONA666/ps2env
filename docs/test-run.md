@@ -21,11 +21,10 @@ The runner assumes the chosen image already contains the full runtime payload.
 For the smoke image, that means:
 
 - `/opt/ps2env/ps2env`
-- `/opt/ps2env/user_env`
-- `/opt/ps2env/configs/config.toml`
-- `/opt/ps2env/game/game.iso`
-- `/opt/ps2env/user/bios/`
-- `/opt/ps2env/user/sstates/baseline/episode_start.p2s`
+- `/opt/ps2env/user_env/basic_ps2/config.toml`
+- `/opt/ps2env/user_env/basic_ps2/Shadow of the Colossus [RUS NTSC].ISO`
+- `/opt/ps2env/user_env/basic_ps2/assets/bios/`
+- `/opt/ps2env/user_env/basic_ps2/states/episode_start.p2s`
 
 `test_run.py` no longer bind-mounts the repo, ISO, BIOS directory, or savestate file into the container.
 
@@ -48,27 +47,21 @@ Build the base image:
 scripts/build-base-image.sh --tag ps2env-base:dev
 ```
 
-Build the game image with baked assets:
+Build the game image from the env-root config:
 
 ```bash
-scripts/build-game-image.sh \
-  --base-image ps2env-base:dev \
-  --tag ps2env-smoke:dev \
-  --game-iso "/home/konakona666/ps2_iso/Shadow of the Colossus [RUS NTSC].ISO" \
-  --bios-dir "/home/konakona666/ps2-bios-usa/ps2 bios usa" \
-  --baseline-state "$HOME/.config/PCSX2/sstates/SCUS-97472 (C19A374E).01.p2s"
+python3 build_image.py \
+  --config user_env/basic_ps2/config.toml \
+  --base-image-tag ps2env-base:dev \
+  --game-image-tag ps2env-smoke:dev
 ```
 
-The wrapper script builds or reuses the base image and then rebuilds only the game image:
+The selected env bundle must already contain or symlink the ISO, BIOS directory, and baseline savestate using env-root-relative paths from `config.toml`.
 
-```bash
-scripts/build-image.sh \
-  --base-tag ps2env-base:dev \
-  --tag ps2env-smoke:dev \
-  --game-iso "/home/konakona666/ps2_iso/Shadow of the Colossus [RUS NTSC].ISO" \
-  --bios-dir "/home/konakona666/ps2-bios-usa/ps2 bios usa" \
-  --baseline-state "$HOME/.config/PCSX2/sstates/SCUS-97472 (C19A374E).01.p2s"
-```
+Optional build flags:
+
+- `--build-base`: rebuild `ps2env-base` before the game image build
+- `--build-pcsx2`: force a vendored PCSX2 AppImage rebuild before rebuilding `ps2env-base`; implies `--build-base`
 
 ## Smoke Command
 
@@ -76,7 +69,7 @@ Run exactly:
 
 ```bash
 python3 test_run.py \
-  --config configs/config.toml \
+  --config user_env/basic_ps2/config.toml \
   --actions '[0]' \
   --num-steps 1000 \
   --reset-steps 200 \
@@ -94,7 +87,7 @@ Expected lifecycle counts for this config:
 - `restarts = 1`
 - `resets = 4`
 
-`configs/config.toml` disables the old `step_limit` truncation so scheduled resets and restarts dominate the run.
+`user_env/basic_ps2/config.toml` disables the old `step_limit` truncation so scheduled resets and restarts dominate the run.
 
 ## Output Artifacts
 

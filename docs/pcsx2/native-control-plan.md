@@ -33,17 +33,19 @@
 - installs the current Python package from `/opt/ps2env`
 - bakes:
   - `ps2env/`
-  - `user_env/`
-  - `configs/`
-  - `/opt/ps2env/game/game.iso`
-  - `/opt/ps2env/user/bios/`
-  - `/opt/ps2env/user/sstates/baseline/episode_start.p2s`
+  - one selected env bundle, for example `/opt/ps2env/user_env/basic_ps2/`
+  - `/opt/ps2env/user_env/basic_ps2/config.toml`
+  - the ISO, BIOS, and baseline savestate referenced by env-root-relative config paths
 
 ## Build Scripts
 
 - `scripts/build-pcsx2-appimage.sh`
 - `scripts/build-base-image.sh`
-- `scripts/build-game-image.sh`
-- `scripts/build-image.sh`
+- `build_image.py`
 
-The wrapper script rebuilds the base image only when asked or when it is missing locally, then rebuilds the game image with the baked user assets.
+The game-image builder validates env-root-relative config paths, stages only the selected env bundle into the Docker build context, and builds the final image from an existing base tag.
+
+`build_image.py` also supports:
+
+- `--build-base` to rebuild `ps2env-base` first
+- `--build-pcsx2` to force a vendored PCSX2 AppImage rebuild before rebuilding `ps2env-base`

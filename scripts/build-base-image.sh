@@ -53,7 +53,10 @@ if [[ -n "$PCSX2_APPIMAGE" ]]; then
     exit 1
   fi
 else
-  appimage_args=(--force)
+  appimage_args=()
+  if [[ "$FORCE_APPIMAGE_BUILD" == "1" ]]; then
+    appimage_args+=(--force)
+  fi
   "$SCRIPT_DIR/build-pcsx2-appimage.sh" "${appimage_args[@]}"
   PCSX2_APPIMAGE=$(realpath "$REPO_ROOT/build/pcsx2/pcsx2-qt.AppImage")
 fi
