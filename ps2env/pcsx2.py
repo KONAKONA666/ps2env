@@ -8,25 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import PS2EnvConfig
+from .controller_mapping import PAD1_KEYBOARD_BINDINGS
 
 
 SETTINGS_VERSION = 1
 VULKAN_RENDERER = "14"
-KEYBOARD_BINDINGS = OrderedDict(
-    [
-        ("Up", "Keyboard/Up"),
-        ("Right", "Keyboard/Right"),
-        ("Down", "Keyboard/Down"),
-        ("Left", "Keyboard/Left"),
-        ("Triangle", "Keyboard/S"),
-        ("Circle", "Keyboard/X"),
-        ("Cross", "Keyboard/Z"),
-        ("Square", "Keyboard/C"),
-        ("Start", "Keyboard/Return"),
-        ("L1", "Keyboard/Q"),
-        ("R1", "Keyboard/W"),
-    ]
-)
 
 
 @dataclass(frozen=True)
@@ -177,7 +163,7 @@ def write_worker_settings(
     sections["SPU2/Output"] = [
         ("Backend", "Null"),
     ]
-    sections["Pad1"] = [("Type", "DualShock2"), *KEYBOARD_BINDINGS.items()]
+    sections["Pad1"] = [("Type", "DualShock2"), *PAD1_KEYBOARD_BINDINGS.items()]
     _write_ini(layout.settings_path, sections)
 
     # The runtime writes its own logs outside the portable tree, but we still

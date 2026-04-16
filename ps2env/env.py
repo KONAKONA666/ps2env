@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .action_runtime import ConfiguredActionPolicy
 from .config import PS2EnvConfig, load_config
 from .env_types import BaseActions, CheckFunction, EnvContext, EnvState
 from .gpu import discover_discrete_nvidia_adapters
@@ -36,7 +37,11 @@ class PS2Env:
         self._reward_fn = load_reward_function(self.config)
         self._init_policy = load_policy(self.config.game.policy_dir, "init_policy")
         self._reset_policy = load_policy(self.config.game.policy_dir, "reset_policy")
-        self._step_policy = load_policy(self.config.game.policy_dir, "step_policy")
+        self._step_policy = (
+            ConfiguredActionPolicy(self.config)
+            if self.config.game.actions
+            else load_policy(self.config.game.policy_dir, "step_policy")
+        )
 
         self.session: PCSX2Session | None = None
         self.base_actions: BaseActions | None = None
@@ -137,11 +142,17 @@ class PS2Env:
         self._runtime_ready()
         assert self.ctx is not None and self.base_actions is not None
         resolved_action = policy.get_action(self.ctx, action_input)
-        policy.take_action(self.ctx, resolved_action)
-        self._apply_after_action(before_wait=True)
-        frame_profile = self.base_actions.wait_num_frames(n_frames)
-        self._apply_after_action(before_wait=False)
-        return resolved_action, frame_profile
+        self.base_actions.begin_wait_tracking()
+        try:
+            policy.take_action(self.ctx, resolved_action)
+            self._apply_after_action(before_wait=True)
+            self.base_actions.wait_num_frames(n_frames)
+            self._apply_after_action(before_wait=False)
+            frame_profile = self.base_actions.finish_wait_tracking()
+            return resolved_action, frame_profile
+        except Exception:
+            self.base_actions.discard_wait_tracking()
+            raise
 
     def _wait_for_check(
         self,
@@ -246,7 +257,7 @@ class PS2Env:
             info: dict[str, Any] = {
                 "action": resolved_action,
                 "frame_profile": frame_profile,
-                "requested_frames": self.config.stepping.n_frames_per_step,
+                "requested_frames": frame_profile["requested_frames"],
                 "advanced_frames": frame_profile["advanced_frames"],
             }
 

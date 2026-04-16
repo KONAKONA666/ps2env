@@ -132,6 +132,34 @@ def _validate_relative_target(
         raise FileNotFoundError(f"{field_name} must resolve to a directory: {normalized}")
 
 
+def _validate_actions(env_root: Path, game_table: dict[str, Any]) -> None:
+    raw_actions = game_table.get("actions", [])
+    if raw_actions in (None, []):
+        return
+    if not isinstance(raw_actions, list):
+        raise ValueError("game.actions must be a list of action module names.")
+
+    actions_dir = env_root / "actions"
+    if not actions_dir.is_dir():
+        raise FileNotFoundError(f"game.actions requires an actions directory at: {actions_dir}")
+
+    seen: set[str] = set()
+    for raw_action in raw_actions:
+        if not isinstance(raw_action, str) or not raw_action.strip():
+            raise ValueError("game.actions entries must be non-empty strings.")
+        action = raw_action.strip()
+        candidate = Path(action)
+        if candidate.suffix or candidate.name != action or candidate.parent != Path("."):
+            raise ValueError("game.actions entries must be simple module names without directories or extensions.")
+        if action in seen:
+            raise ValueError(f"game.actions contains a duplicate action name: {action}")
+        seen.add(action)
+
+        module_path = actions_dir / f"{action}.py"
+        if not module_path.is_file():
+            raise FileNotFoundError(f"Configured action module does not exist: {module_path}")
+
+
 def _copy_ignore(_: str, names: list[str]) -> set[str]:
     return {name for name in names if name in IGNORE_NAMES}
 
@@ -175,6 +203,8 @@ def _validate_config(repo_root: Path, config_path: Path) -> tuple[Path, Path]:
             table.get(key),
             required=required,
         )
+
+    _validate_actions(env_root, _get_table(data, "game", required=True))
 
     return config_path, config_rel
 

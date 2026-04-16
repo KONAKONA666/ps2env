@@ -82,12 +82,41 @@ Tracked smoke configs now live inside env roots, for example `/opt/ps2env/user_e
 - `./states/episode_start.p2s`
 - `./checks`
 - `./callbacks`
+- `./actions`
 - `./policy`
 - `./env_utils.py`
 
 The image builder preserves the env bundle's repo-relative location, so `user_env/basic_ps2/config.toml` becomes `/opt/ps2env/user_env/basic_ps2/config.toml`. Relative paths inside the TOML continue to resolve correctly because `load_config()` resolves them against the config directory.
 
 Legacy `input.pause_hotkey` and `input.frame_advance_hotkey` are still accepted by the parser for compatibility, but they are ignored by the runtime.
+
+Step actions are now config-driven:
+
+- `game.actions = ["jump", "move", "combat"]` defines the public action index order.
+- Each configured name resolves to `actions/<name>.py` under the env root.
+- Each action module exports `action(ctx, *args)`.
+- `step()` accepts `[action_idx, *action_args]`.
+- `step()` still performs the trailing `stepping.n_frames_per_step` wait after the action function runs.
+- Action modules may call base-action wait helpers internally; total step frame accounting includes both those waits and the trailing wait.
+
+The sample Shadow of the Colossus action payloads are:
+
+- `jump`: `[0, hold_r1]`
+- `move`: `[1, hold_r1, dir0, ...]`
+- `combat`: `[2]`
+
+`move` directions use the left stick with `0=forward`, `1=backward`, `2=left`, `3=right`.
+
+The generated Pad 1 default keymap is:
+
+- `D-Pad Up/Right/Down/Left -> Up/Right/Down/Left`
+- `Triangle/Circle/Cross/Square -> i/l/k/j`
+- `Select/Start -> Backspace/Return`
+- `L1/L2/L3 -> q/1/2`
+- `R1/R2/R3 -> e/3/4`
+- `Analog Toggle/Apply Pressure -> minus`
+- `Left Stick Up/Right/Down/Left -> w/d/s/a`
+- `Right Stick Up/Right/Down/Left -> t/h/g/f`
 
 ## Testing Expectations
 

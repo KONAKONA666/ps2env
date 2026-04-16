@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable
 import numpy as np
 
 from .config import PS2EnvConfig
+from .controller_mapping import NAMED_CONTROL_KEYS
 
 if TYPE_CHECKING:
     from .session import PCSX2Session
@@ -85,6 +86,7 @@ class EnvContext:
 class BaseActions:
     session: "PCSX2Session"
     game_fps: float
+    _tracked_wait_profiles: list[dict[str, Any]] | None = field(default=None, init=False, repr=False)
 
     def press_key(self, key: str) -> None:
         self.session.input.press_key(key)
@@ -98,11 +100,25 @@ class BaseActions:
     def release_all(self) -> None:
         self.session.input.release_all()
 
+    def begin_wait_tracking(self) -> None:
+        self._tracked_wait_profiles = []
+
+    def finish_wait_tracking(self) -> dict[str, Any]:
+        profiles = list(self._tracked_wait_profiles or [])
+        self._tracked_wait_profiles = None
+        return _aggregate_wait_profiles(profiles)
+
+    def discard_wait_tracking(self) -> None:
+        self._tracked_wait_profiles = None
+
     def ensure_paused(self) -> None:
         self.session.ensure_paused()
 
     def wait_num_frames(self, frame_count: int) -> dict[str, Any]:
-        return self.session.advance_frames(frame_count)
+        profile = self.session.advance_frames(frame_count)
+        if self._tracked_wait_profiles is not None:
+            self._tracked_wait_profiles.append(dict(profile))
+        return profile
 
     def frames_from_seconds(self, seconds: float) -> int:
         return max(1, round(float(seconds) * max(self.game_fps, 1.0)))
@@ -115,3 +131,42 @@ class BaseActions:
 
     def load_state_slot(self, slot: int) -> None:
         self.session.load_state_slot(slot)
+
+
+def _aggregate_wait_profiles(profiles: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "requested_frames": sum(int(profile.get("requested_frames", 0)) for profile in profiles),
+        "advanced_frames": sum(int(profile.get("advanced_frames", 0)) for profile in profiles),
+        "frame_transitions_observed": sum(int(profile.get("frame_transitions_observed", 0)) for profile in profiles),
+        "status_polls": sum(int(profile.get("status_polls", 0)) for profile in profiles),
+        "total_ms": sum(float(profile.get("total_ms", 0.0)) for profile in profiles),
+        "wait_count": len(profiles),
+        "wait_profiles": profiles,
+    }
+
+
+def _make_press(control_key: str) -> Callable[[BaseActions], None]:
+    def _press(self: BaseActions) -> None:
+        self.press_key(control_key)
+
+    return _press
+
+
+def _make_release(control_key: str) -> Callable[[BaseActions], None]:
+    def _release(self: BaseActions) -> None:
+        self.release_key(control_key)
+
+    return _release
+
+
+def _make_tap(control_key: str) -> Callable[[BaseActions], None]:
+    def _tap(self: BaseActions) -> None:
+        self.tap_key(control_key)
+
+    return _tap
+
+
+for _control_name, _control_key in NAMED_CONTROL_KEYS.items():
+    setattr(BaseActions, f"press_{_control_name}", _make_press(_control_key))
+    setattr(BaseActions, f"release_{_control_name}", _make_release(_control_key))
+    setattr(BaseActions, f"tap_{_control_name}", _make_tap(_control_key))

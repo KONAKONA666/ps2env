@@ -33,7 +33,6 @@ episode_start_slot = 1
 [stepping]
 n_frames_per_step = 4
 after_action = "hold"
-capture_action = false
 
 [lifecycle]
 frames_per_loop = 4

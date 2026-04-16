@@ -42,6 +42,7 @@ Important keys:
 - `game.iso_path`
 - `game.bios_dir`
 - `game.bios_file`
+- `game.actions`
 - `game.startup_check`
 - `game.episode_check`
 - `game.step_checks`
@@ -58,7 +59,30 @@ Important keys:
 
 All path-bearing config values are relative to the env root that contains `config.toml`.
 
+If `game.actions` is configured, `step()` takes `[action_idx, *action_args]` payloads and resolves `action_idx` through modules in the fixed env-root `actions/` directory.
+
 `input.pause_hotkey` and `input.frame_advance_hotkey` remain parser-compatible for older configs, but the runtime no longer uses or generates those hotkeys.
+
+## Default Pad1 Keymap
+
+The generated DualShock 2 keyboard bindings are:
+
+- `D-Pad Up/Right/Down/Left -> Up/Right/Down/Left`
+- `Triangle/Circle/Cross/Square -> i/l/k/j`
+- `Select/Start -> Backspace/Return`
+- `L1/L2/L3 -> q/1/2`
+- `R1/R2/R3 -> e/3/4`
+- `Analog Toggle/Apply Pressure -> minus`
+- `Left Stick Up/Right/Down/Left -> w/d/s/a`
+- `Right Stick Up/Right/Down/Left -> t/h/g/f`
+
+The sample Shadow of the Colossus env uses:
+
+- `jump`: `[0, hold_r1]`
+- `move`: `[1, hold_r1, dir0, ...]`
+- `combat`: `[2]`
+
+For `move`, directions are `0=forward`, `1=backward`, `2=left`, `3=right`.
 
 ## Current Smoke Target
 
