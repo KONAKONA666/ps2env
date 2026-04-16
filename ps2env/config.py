@@ -16,6 +16,7 @@ class GameConfig:
     bios_dir: str
     bios_file: str | None
     fastboot: bool
+    actions: tuple[str, ...]
     startup_check: str | None
     episode_check: str | None
     step_checks: tuple[str, ...]
@@ -63,7 +64,6 @@ class CaptureConfig:
 class SteppingConfig:
     n_frames_per_step: int
     after_action: str
-    capture_action: bool
 
 
 @dataclass(frozen=True)
@@ -149,6 +149,22 @@ def _get_str_tuple(section: dict[str, Any], key: str, *, default: tuple[str, ...
     return tuple(items)
 
 
+def _validate_action_names(actions: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    validated: list[str] = []
+    for action in actions:
+        candidate = Path(action)
+        if candidate.suffix or candidate.name != action or candidate.parent != Path("."):
+            raise ValueError(
+                "game.actions entries must be simple module names without directories or extensions."
+            )
+        if action in seen:
+            raise ValueError(f"game.actions contains a duplicate action name: {action}")
+        seen.add(action)
+        validated.append(action)
+    return tuple(validated)
+
+
 def _get_pair(section: dict[str, Any], key: str, *, default: tuple[int, int]) -> tuple[int, int]:
     value = section.get(key, list(default))
     if (
@@ -194,6 +210,7 @@ def load_config(path: str | Path) -> PS2EnvConfig:
 
     _reject_removed_keys("workers", workers, ("duration_seconds",))
     _reject_removed_keys("input", input_section, ("action_interval_ms", "press_duration_ms", "action_labels"))
+    _reject_removed_keys("stepping", stepping, ("capture_action",))
 
     n_frames_per_step = stepping.get("n_frames_per_step")
     if n_frames_per_step is None:
@@ -212,6 +229,7 @@ def load_config(path: str | Path) -> PS2EnvConfig:
             bios_dir=_resolve_config_path(base_dir, _get_str(game, "bios_dir")) or "",
             bios_file=_get_optional_str(game, "bios_file"),
             fastboot=_get_bool(game, "fastboot"),
+            actions=_validate_action_names(_get_str_tuple(game, "actions")),
             startup_check=_get_optional_str(game, "startup_check"),
             episode_check=_get_optional_str(game, "episode_check"),
             step_checks=_get_str_tuple(game, "step_checks"),
@@ -247,7 +265,6 @@ def load_config(path: str | Path) -> PS2EnvConfig:
         stepping=SteppingConfig(
             n_frames_per_step=int(n_frames_per_step),
             after_action=_get_str(stepping, "after_action", default="hold"),
-            capture_action=_get_bool(stepping, "capture_action", default=False),
         ),
         lifecycle=LifecycleConfig(
             frames_per_loop=_get_int(lifecycle, "frames_per_loop", default=4),

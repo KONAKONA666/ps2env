@@ -88,7 +88,7 @@ def _resolve_gpu_index() -> str:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Launch the threaded PS2Env Docker test runner.")
     parser.add_argument("--config", required=True, help="Path to the environment TOML config.")
-    parser.add_argument("--actions", required=True, help="Python literal describing the action pool.")
+    parser.add_argument("--actions", required=True, help="Python or JSON list literal describing the action pool.")
     parser.add_argument("--num-steps", type=int, required=True, help="Completed step() calls per worker.")
     parser.add_argument("--reset-steps", type=int, required=True, help="Reset every N completed steps per worker. <=0 disables.")
     parser.add_argument("--restart-steps", type=int, required=True, help="Restart every N completed steps per worker. <=0 disables.")

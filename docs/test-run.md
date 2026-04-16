@@ -70,7 +70,7 @@ Run exactly:
 ```bash
 python3 test_run.py \
   --config user_env/basic_ps2/config.toml \
-  --actions '[0]' \
+  --actions '[[0,false],[0,true],[1,false,0],[1,true,0,3],[2]]' \
   --num-steps 1000 \
   --reset-steps 200 \
   --restart-steps 500 \
@@ -79,6 +79,14 @@ python3 test_run.py \
   --outdir /tmp/ps2env-test-run-real \
   --image ps2env-smoke:dev
 ```
+
+`--actions` is a Python or JSON-compatible list literal describing the action pool sampled by the runner. With `game.actions = ["jump", "move", "combat"]`, the sample action payloads are:
+
+- `jump`: `[0, hold_r1]`
+- `move`: `[1, hold_r1, dir0, ...]`
+- `combat`: `[2]`
+
+For `move`, directions are `0=forward`, `1=backward`, `2=left`, `3=right`.
 
 Expected lifecycle counts for this config:
 
