@@ -14,9 +14,9 @@ The deployment model is split into two images:
    - host-matching NVIDIA userspace installer
 2. `ps2env-game`
    - current `ps2env` code
-   - `user_env`
-   - image-local configs
-   - baked ISO, BIOS, and baseline savestate
+   - one selected `user_env/<env-name>/` bundle
+   - the env-local `config.toml`
+   - baked ISO, BIOS, and baseline savestate referenced from that env root
 
 ## Control Surfaces
 
@@ -57,7 +57,7 @@ Config fields:
 
 ```toml
 [savestates]
-episode_start_file = "/opt/ps2env/user/sstates/baseline/episode_start.p2s"
+episode_start_file = "./states/episode_start.p2s"
 episode_start_slot = 1
 ```
 
@@ -75,13 +75,17 @@ This gives deterministic episode entry without adding file-path save/load IPC.
 
 ## Config And Paths
 
-Tracked configs now use image-local paths such as:
+Tracked smoke configs now live inside env roots, for example `/opt/ps2env/user_env/basic_ps2/config.toml`, and use env-root-relative paths such as:
 
-- `/opt/ps2env/game/game.iso`
-- `/opt/ps2env/user/bios`
-- `/opt/ps2env/user/sstates/baseline/episode_start.p2s`
+- `./Shadow of the Colossus [RUS NTSC].ISO`
+- `./assets/bios`
+- `./states/episode_start.p2s`
+- `./checks`
+- `./callbacks`
+- `./policy`
+- `./env_utils.py`
 
-Relative Python module paths inside the TOML continue to resolve correctly because configs live under `/opt/ps2env/configs/`.
+The image builder preserves the env bundle's repo-relative location, so `user_env/basic_ps2/config.toml` becomes `/opt/ps2env/user_env/basic_ps2/config.toml`. Relative paths inside the TOML continue to resolve correctly because `load_config()` resolves them against the config directory.
 
 Legacy `input.pause_hotkey` and `input.frame_advance_hotkey` are still accepted by the parser for compatibility, but they are ignored by the runtime.
 

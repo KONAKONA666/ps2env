@@ -208,8 +208,8 @@ def load_config(path: str | Path) -> PS2EnvConfig:
 
     return PS2EnvConfig(
         game=GameConfig(
-            iso_path=_get_str(game, "iso_path"),
-            bios_dir=_get_str(game, "bios_dir"),
+            iso_path=_resolve_config_path(base_dir, _get_str(game, "iso_path")) or "",
+            bios_dir=_resolve_config_path(base_dir, _get_str(game, "bios_dir")) or "",
             bios_file=_get_optional_str(game, "bios_file"),
             fastboot=_get_bool(game, "fastboot"),
             startup_check=_get_optional_str(game, "startup_check"),

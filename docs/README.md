@@ -20,11 +20,9 @@ git submodule update --init --recursive
 - `ps2env-base` contains patched PCSX2, graphics/runtime dependencies, and the host-matching NVIDIA userspace installer.
 - `ps2env-game` is built from `ps2env-base` and bakes:
   - current `ps2env` Python code
-  - `user_env`
-  - image-local configs
-  - the game ISO
-  - BIOS files
-  - the baseline savestate used for deterministic `init()` and `reset()`
+  - one selected env bundle rooted at `user_env/<env-name>/`
+  - that env bundle's `config.toml`
+  - the game ISO, BIOS files, and baseline savestate referenced by env-root-relative paths
 - Each worker stages a private portable PCSX2 tree from `/opt/pcsx2`, generates a worker-local `PCSX2.ini`, and runs against its own Xdummy display and PINE slot.
 
 ## Current Control Plane
@@ -37,7 +35,7 @@ git submodule update --init --recursive
 
 ## Active Config Surface
 
-Canonical configs live in [configs/](../configs/).
+Canonical smoke configs live in env roots such as [user_env/basic_ps2/config.toml](../user_env/basic_ps2/config.toml).
 
 Important keys:
 
@@ -58,19 +56,24 @@ Important keys:
 - `savestates.episode_start_file`
 - `savestates.episode_start_slot`
 
+All path-bearing config values are relative to the env root that contains `config.toml`.
+
 `input.pause_hotkey` and `input.frame_advance_hotkey` remain parser-compatible for older configs, but the runtime no longer uses or generates those hotkeys.
 
 ## Current Smoke Target
 
-The tracked smoke config is [configs/config.toml](../configs/config.toml).
+The tracked smoke config is [user_env/basic_ps2/config.toml](../user_env/basic_ps2/config.toml).
 
 It assumes the `ps2env-game` image already contains:
 
-- `/opt/ps2env/game/game.iso`
-- `/opt/ps2env/user/bios/`
-- `/opt/ps2env/user/sstates/baseline/episode_start.p2s`
+- `/opt/ps2env/user_env/basic_ps2/config.toml`
+- `/opt/ps2env/user_env/basic_ps2/Shadow of the Colossus [RUS NTSC].ISO`
+- `/opt/ps2env/user_env/basic_ps2/assets/bios/`
+- `/opt/ps2env/user_env/basic_ps2/states/episode_start.p2s`
 
 The host-side smoke runner now mounts only:
 
 - the output directory
 - the cache directory used by the NVIDIA installer
+
+Use `build_image.py --build-base` to rebuild `ps2env-base` as part of the game-image flow, or `--build-pcsx2` to force a vendored PCSX2 AppImage rebuild before that base-image rebuild.
