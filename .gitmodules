@@ -1,0 +1,4 @@
+[submodule "third_party/pcsx2"]
+	path = third_party/pcsx2
+	url = git@github.com:KONAKONA666/pcsx2.git
+	branch = ps2env-native-control

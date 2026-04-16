@@ -9,6 +9,12 @@
 - [pcsx2/native-control-plan.md](./pcsx2/native-control-plan.md): implementation notes for the native control path
 - [test-run.md](./test-run.md): build flow, smoke command, lifecycle semantics, and artifacts
 
+Fresh clones must initialize the forked PCSX2 submodule:
+
+```bash
+git submodule update --init --recursive
+```
+
 ## Current Runtime Model
 
 - `ps2env-base` contains patched PCSX2, graphics/runtime dependencies, and the host-matching NVIDIA userspace installer.
