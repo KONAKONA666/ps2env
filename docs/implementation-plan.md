@@ -1,18 +1,19 @@
 # PS2Env Implementation Plan
 
+> Historical implementation-planning document. The current implemented runtime and deployment model is described in [design.md](./design.md), [test-run.md](./test-run.md), and [pcsx2/native-control-plan.md](./pcsx2/native-control-plan.md).
+
 ## Overview
 
 This document turns the architecture into an implementation sequence. The order is chosen to unlock deterministic stepping first, then environment authoring, then persistence/tooling, then deployment hardening.
 
-## Phase 0: Smoke Bring-Up Slice
+## Phase 0: Initial Runtime Slice
 
 ### Deliverables
 
 - Docker image with baked-in PCSX2 AppImage payload
-- Smoke runtime package
-- PS2 environment runtime package
+- PS2Env runtime package
+- Threaded test-run runtime
 - Per-worker Xdummy + PCSX2 bring-up
-- Random-action smoke runner
 - Manual artifact capture and logging
 
 ### Tasks
@@ -20,12 +21,12 @@ This document turns the architecture into an implementation sequence. The order 
 - Bake the provided PCSX2 AppImage into the image at build time.
 - Extract the AppImage into `/opt/pcsx2`.
 - Install the host-matching NVIDIA display userspace in the container at runtime before launching PCSX2.
-- Launch one worker process per container.
+- Launch one runtime process per container.
+- Start one PS2Env worker per thread inside the runtime.
 - Give each worker:
-  - display `:90`
-  - PINE slot `28011`
-  - one visible GPU
-  - isolated output directory
+  - its own Xdummy display
+  - its own PINE slot
+  - an isolated output directory
 - Stage a private portable PCSX2 tree per worker.
 - Generate per-worker `PCSX2.ini` with:
   - Vulkan renderer
@@ -34,7 +35,7 @@ This document turns the architecture into an implementation sequence. The order 
   - PINE enabled
   - fixed hotkeys
   - fixed keyboard Pad 1 bindings
-- Capture `smoke.mp4` and `last_frame.png`.
+- Capture `session.mp4` and `last_frame.png`.
 - Emit `worker.log`, `events.jsonl`, and `pcsx2.log`.
 - Implement `PS2Env` with:
   - `start()`
@@ -48,10 +49,8 @@ This document turns the architecture into an implementation sequence. The order 
 ### Acceptance Criteria
 
 - The image builds from the local AppImage.
-- A worker can launch PCSX2 inside Docker, render to Xdummy, record video, and inject random inputs on a single visible GPU.
-- The host runner can launch multiple worker containers in parallel and assign GPUs round-robin by worker index.
-- The host runner can restrict scheduling to a configured subset of GPUs when some host GPUs are not present-capable under the current Xdummy/Vulkan stack.
-- The shared-container env runner can execute multiple workers on one visible GPU.
+- A worker can launch PCSX2 inside Docker, render to Xdummy, record video, and step deterministically on a single visible GPU.
+- The host runner can launch one shared container and execute multiple workers inside it on one visible GPU.
 - `ctx.frame_count` increments exactly by `n_frames_per_step`.
 - Missing BIOS, GPU, render window, or PINE socket fails clearly and leaves per-worker diagnostics.
 
@@ -98,7 +97,7 @@ This document turns the architecture into an implementation sequence. The order 
 - Xdummy session bootstrap
 - Render window discovery
 - X11/XTest hotkey injection
-- XShm frame capture
+- FFmpeg/X11 frame capture
 - `framelayer` / `framewait` integration
 
 ### Tasks
@@ -110,15 +109,15 @@ This document turns the architecture into an implementation sequence. The order 
   - pause toggle
   - frame advance
 - Implement X11/XTest keyboard injection against the emulator window.
-- Integrate XShm capture for the final rendered frame.
+- Integrate FFmpeg/X11 frame capture for the final rendered frame.
 - Wire frame counting and frame-wait helpers to support:
   - `lifecycle.frames_per_loop`
-  - `stepping.n_frames_per_action`
+  - `stepping.n_frames_per_step`
 
 ### Acceptance Criteria
 
 - The runtime can pause and resume the emulator reliably in Xdummy.
-- The runtime can capture the render surface via XShm.
+- The runtime can capture the render surface via FFmpeg/X11.
 - Frame waits align with observed rendered-frame progression.
 
 ## Phase 3: Emulator Runtime and State Machine
@@ -232,7 +231,7 @@ This document turns the architecture into an implementation sequence. The order 
   1. resolve action
   2. resume
   3. take action
-  4. wait `n_frames_per_action`
+  4. wait `n_frames_per_step`
   5. capture final frame
   6. pause
   7. update context
@@ -324,7 +323,7 @@ This document turns the architecture into an implementation sequence. The order 
 
 ### Acceptance Criteria
 
-- One container can run one env instance with GPU rendering, Xdummy, XShm capture, and PINE.
+- One container can run one env instance with GPU rendering, Xdummy, FFmpeg/X11 capture, and PINE.
 - The rollout server remains executor-only.
 
 ## Cross-Cutting Validation Matrix
@@ -334,15 +333,15 @@ The following validations apply across phases:
 - State guards from `SHUTDOWN`, `INITIALIZATION`, `EPISODE`, `TERMINATED`, and `TRUNCATED`
 - `start()` reaches `startup_check`
 - `init()` and `reset()` reach `episode_check`
-- `step()` advances exactly `n_frames_per_action` rendered frames
+- `step()` advances exactly `n_frames_per_step` rendered frames
 - Pause/resume hotkey control remains stable in Xdummy
-- XShm capture works in `-batch -nogui`
+- FFmpeg/X11 capture works in `-batch -nogui`
 - PINE connectivity works for status, memory, and savestate slot control
 - Generated PCSX2 settings preserve Vulkan, pause, and IPC invariants
 
-For the implemented smoke slice, manual inspection of `smoke.mp4`, `last_frame.png`, and `events.jsonl` is the validation gate.
+For the implemented runtime, manual inspection of `session.mp4`, `last_frame.png`, and `events.jsonl` remains an important debugging path.
 
-Observed constraint after real smoke runs:
+Observed constraint after real lifecycle runs:
 
 - PCSX2 + Vulkan + Xdummy is stable when each worker container sees exactly one GPU.
 - A container with multiple visible GPUs does not provide a presentable surface for every GPU, so machine-level multi-worker scheduling must be implemented with one container per worker.

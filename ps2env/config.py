@@ -28,7 +28,6 @@ class GameConfig:
 @dataclass(frozen=True)
 class WorkersConfig:
     count: int
-    duration_seconds: int
     display_base: int
     pine_slot_base: int
 
@@ -41,11 +40,14 @@ class GPUConfig:
 
 @dataclass(frozen=True)
 class InputConfig:
-    action_interval_ms: int
-    press_duration_ms: int
-    pause_hotkey: str
-    frame_advance_hotkey: str
-    action_labels: tuple[str, ...]
+    pause_hotkey: str | None
+    frame_advance_hotkey: str | None
+
+
+@dataclass(frozen=True)
+class SavestatesConfig:
+    episode_start_file: str | None
+    episode_start_slot: int
 
 
 @dataclass(frozen=True)
@@ -76,11 +78,12 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
-class SmokeConfig:
+class PS2EnvConfig:
     game: GameConfig
     workers: WorkersConfig
     gpu: GPUConfig
     input: InputConfig
+    savestates: SavestatesConfig
     capture: CaptureConfig
     stepping: SteppingConfig
     lifecycle: LifecycleConfig
@@ -166,7 +169,13 @@ def _resolve_config_path(base_dir: Path, value: str | None) -> str | None:
     return str((base_dir / path).resolve())
 
 
-def load_config(path: str | Path) -> SmokeConfig:
+def _reject_removed_keys(section_name: str, section: dict[str, Any], keys: tuple[str, ...]) -> None:
+    for key in keys:
+        if key in section:
+            raise ValueError(f"Config key '{section_name}.{key}' was removed and is no longer supported.")
+
+
+def load_config(path: str | Path) -> PS2EnvConfig:
     config_path = Path(path).resolve()
     with config_path.open("rb") as handle:
         data = tomllib.load(handle)
@@ -176,11 +185,15 @@ def load_config(path: str | Path) -> SmokeConfig:
     game = _require_section(data, "game")
     workers = _require_section(data, "workers")
     gpu = _require_section(data, "gpu")
-    input_section = _require_section(data, "input")
+    input_section = _optional_section(data, "input")
+    savestates = _optional_section(data, "savestates")
     capture = _require_section(data, "capture")
     stepping = _optional_section(data, "stepping")
     lifecycle = _optional_section(data, "lifecycle")
     logging = _require_section(data, "logging")
+
+    _reject_removed_keys("workers", workers, ("duration_seconds",))
+    _reject_removed_keys("input", input_section, ("action_interval_ms", "press_duration_ms", "action_labels"))
 
     n_frames_per_step = stepping.get("n_frames_per_step")
     if n_frames_per_step is None:
@@ -188,7 +201,12 @@ def load_config(path: str | Path) -> SmokeConfig:
     if not isinstance(n_frames_per_step, int) or n_frames_per_step < 1:
         raise ValueError("stepping.n_frames_per_step must be an integer >= 1.")
 
-    return SmokeConfig(
+    episode_start_file = _resolve_config_path(base_dir, _get_optional_str(savestates, "episode_start_file"))
+    episode_start_slot = _get_int(savestates, "episode_start_slot", default=1)
+    if episode_start_slot < 0:
+        raise ValueError("savestates.episode_start_slot must be >= 0.")
+
+    return PS2EnvConfig(
         game=GameConfig(
             iso_path=_get_str(game, "iso_path"),
             bios_dir=_get_str(game, "bios_dir"),
@@ -204,7 +222,6 @@ def load_config(path: str | Path) -> SmokeConfig:
         ),
         workers=WorkersConfig(
             count=_get_int(workers, "count"),
-            duration_seconds=_get_int(workers, "duration_seconds"),
             display_base=_get_int(workers, "display_base"),
             pine_slot_base=_get_int(workers, "pine_slot_base"),
         ),
@@ -213,11 +230,12 @@ def load_config(path: str | Path) -> SmokeConfig:
             vendor=_get_str(gpu, "vendor"),
         ),
         input=InputConfig(
-            action_interval_ms=_get_int(input_section, "action_interval_ms"),
-            press_duration_ms=_get_int(input_section, "press_duration_ms"),
-            pause_hotkey=_get_str(input_section, "pause_hotkey"),
-            frame_advance_hotkey=_get_str(input_section, "frame_advance_hotkey"),
-            action_labels=_get_str_tuple(input_section, "action_labels"),
+            pause_hotkey=_get_optional_str(input_section, "pause_hotkey"),
+            frame_advance_hotkey=_get_optional_str(input_section, "frame_advance_hotkey"),
+        ),
+        savestates=SavestatesConfig(
+            episode_start_file=episode_start_file,
+            episode_start_slot=int(episode_start_slot),
         ),
         capture=CaptureConfig(
             width=_get_int(capture, "width"),
@@ -244,18 +262,15 @@ def load_config(path: str | Path) -> SmokeConfig:
 
 
 def apply_runtime_overrides(
-    config: SmokeConfig,
+    config: PS2EnvConfig,
     *,
     workers: int | None = None,
-    duration_seconds: int | None = None,
     game_path: str | None = None,
     bios_dir: str | None = None,
-) -> SmokeConfig:
+) -> PS2EnvConfig:
     updated = config
     if workers is not None:
         updated = replace(updated, workers=replace(updated.workers, count=workers))
-    if duration_seconds is not None:
-        updated = replace(updated, workers=replace(updated.workers, duration_seconds=duration_seconds))
     if game_path is not None or bios_dir is not None:
         updated = replace(
             updated,

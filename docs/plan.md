@@ -1,5 +1,7 @@
 # PS2Env Architecture Plan
 
+> Historical planning document. The current implemented contract is described in [design.md](./design.md), [test-run.md](./test-run.md), and [pcsx2/native-control-findings.md](./pcsx2/native-control-findings.md).
+
 ## Goal
 
 Build a reproducible PS2 RL environment framework that:
@@ -32,7 +34,7 @@ Build a reproducible PS2 RL environment framework that:
 - `start()` owns startup synchronization.
 - `init()` and `reset()` are policy-driven loops.
 - `step()` is a single fixed loop iteration.
-- Frame advance exists only for debugging, not as the main step implementation.
+- Native frame advance is the deterministic stepping primitive for the current implementation.
 
 ### 4. Public Lifecycle
 
@@ -77,8 +79,8 @@ Method contract:
 - Later RL runtime: the worker remains the unit of env state ownership.
 - Vulkan is the required renderer in Linux/Docker.
 - Xdummy provides the headless X server.
-- Final architecture targets XShm for observations.
-- Implemented smoke slice records the X11 display with FFmpeg for manual validation.
+- The current implementation uses FFmpeg/X11 capture for observations and debug recording.
+- The implemented runtime keeps FFmpeg session recording enabled for debugging and post-run inspection.
 - Rollout servers execute envs.
 - Training servers own RL orchestration.
 
@@ -108,7 +110,7 @@ Responsible for:
 - Xdummy session management
 - render window discovery
 - X11/XTest hotkey injection
-- XShm capture
+- FFmpeg/X11 frame capture
 - frame wait/count integration
 
 ### Env Runtime

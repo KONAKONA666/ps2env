@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
-from .config import SmokeConfig
+from .config import PS2EnvConfig
 
 if TYPE_CHECKING:
     from .session import PCSX2Session
@@ -29,7 +29,7 @@ RewardFunction = Callable[..., float]
 
 @dataclass(slots=True)
 class EnvContext:
-    config: SmokeConfig
+    config: PS2EnvConfig
     base_actions: "BaseActions"
     checks: dict[str, CheckFunction]
     callbacks: dict[str, CallbackFunction]
@@ -109,3 +109,9 @@ class BaseActions:
 
     def wait_seconds(self, seconds: float) -> dict[str, Any]:
         return self.wait_num_frames(self.frames_from_seconds(seconds))
+
+    def save_state_slot(self, slot: int) -> None:
+        self.session.save_state_slot(slot)
+
+    def load_state_slot(self, slot: int) -> None:
+        self.session.load_state_slot(slot)

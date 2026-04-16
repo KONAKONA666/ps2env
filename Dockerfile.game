@@ -1,0 +1,18 @@
+ARG BASE_IMAGE=ps2env-base:latest
+FROM ${BASE_IMAGE}
+
+COPY _game_assets/game.iso /opt/ps2env/game/game.iso
+COPY _game_assets/bios/ /opt/ps2env/user/bios/
+COPY _game_assets/sstates/baseline/episode_start.p2s /opt/ps2env/user/sstates/baseline/episode_start.p2s
+
+COPY pyproject.toml /opt/ps2env/pyproject.toml
+COPY ps2env /opt/ps2env/ps2env
+COPY user_env /opt/ps2env/user_env
+COPY configs /opt/ps2env/configs
+COPY docker/entrypoint.sh /opt/ps2env/docker/entrypoint.sh
+
+RUN chmod +x /opt/ps2env/docker/entrypoint.sh && \
+    python3 -m pip install --no-cache-dir /opt/ps2env
+
+WORKDIR /workspace
+ENTRYPOINT ["/opt/ps2env/docker/entrypoint.sh"]

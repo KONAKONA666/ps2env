@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from .capture import FfmpegCapture, X11FrameCapture, capture_single_frame
-from .config import SmokeConfig
+from .config import PS2EnvConfig
 from .gpu import GpuAdapter
 from .input import X11InputController
 from .pcsx2 import (
+    WorkerPcsx2Layout,
     build_launch_command,
     build_worker_environment,
     select_bios_file,
@@ -24,7 +25,7 @@ from .xdummy import XDummyServer
 
 @dataclass
 class PCSX2Session:
-    config: SmokeConfig
+    config: PS2EnvConfig
     worker_id: int
     run_id: str
     output_root: Path
@@ -50,20 +51,25 @@ class PCSX2Session:
         self.input: X11InputController | None = None
         self.pine: PineClient | None = None
         self.window_id: int | None = None
-        self.layout_root: Path | None = None
+        self.layout: WorkerPcsx2Layout | None = None
+        self.current_game_id: str | None = None
+        self.current_game_crc: int | None = None
         self.paths = {
             "pcsx2_log": self.worker_root / "pcsx2.log",
             "pcsx2_console_log": self.worker_root / "pcsx2-console.log",
-            "smoke_video": self.worker_root / "smoke.mp4",
+            "session_video": self.worker_root / "session.mp4",
             "last_frame": self.worker_root / "last_frame.png",
             "xorg_log": self.worker_root / "xorg.log",
             "xorg_config": self.worker_root / "xorg-dummy.conf",
+            "episode_state_cache": self.worker_root / "baseline" / "episode_start.p2s",
         }
 
     def start(self) -> dict[str, Any]:
         bios_path = select_bios_file(Path(self.config.game.bios_dir), self.config.game.bios_file)
         layout = stage_worker_pcsx2_tree(self.pcsx2_source_root, self.xdg_runtime_dir / "pcsx2-app")
-        self.layout_root = layout.root
+        self.layout = layout
+
+        self._cache_episode_start_state()
 
         write_worker_settings(
             layout,
@@ -83,6 +89,8 @@ class PCSX2Session:
         )
         self.xorg.start()
         self.xorg.wait_until_ready(timeout_seconds=20.0)
+
+        self.input = X11InputController(self.display)
 
         pcsx2_env = build_worker_environment(
             layout,
@@ -108,10 +116,11 @@ class PCSX2Session:
         socket_path = pine_socket_path(self.xdg_runtime_dir, self.pine_slot)
         wait_for_pine_socket(socket_path, timeout_seconds=60.0)
         self.pine = PineClient(socket_path)
+        self.pine.connect()
 
         self.window_id = self._wait_for_window(timeout_seconds=60.0)
-        self._prepare_window(self.window_id)
-        self.input = X11InputController(self.display, self.window_id)
+        self.input.bind_window(self.window_id)
+        self.input.move_resize_window(0, 0, self.config.capture.width, self.config.capture.height)
         self.frame_capture = X11FrameCapture(
             display=self.display,
             width=self.config.capture.width,
@@ -123,9 +132,10 @@ class PCSX2Session:
             width=self.config.capture.width,
             height=self.config.capture.height,
             framerate=self.config.capture.framerate,
-            output_path=self.paths["smoke_video"],
+            output_path=self.paths["session_video"],
         )
         self.capture_recorder.start()
+        self._wait_for_vm_ready(timeout_seconds=15.0)
         self.ensure_paused()
 
         return {
@@ -155,11 +165,19 @@ class PCSX2Session:
         except Exception:
             pass
 
-        if self.input is not None:
+        if self.pine is not None:
             try:
-                self.input.release_all()
+                self.pine.close()
             except Exception:
                 pass
+            self.pine = None
+
+        if self.input is not None:
+            try:
+                self.input.close()
+            except Exception:
+                pass
+            self.input = None
 
         if self.pcsx2_process is not None and self.pcsx2_process.poll() is None:
             self.pcsx2_process.terminate()
@@ -173,9 +191,9 @@ class PCSX2Session:
             self.xorg.stop()
             self.xorg = None
 
-        if self.layout_root is not None:
-            shutil.rmtree(self.layout_root, ignore_errors=True)
-            self.layout_root = None
+        if self.layout is not None:
+            shutil.rmtree(self.layout.root, ignore_errors=True)
+            self.layout = None
 
     def is_game_alive(self) -> bool:
         return self.pcsx2_process is not None and self.pcsx2_process.poll() is None
@@ -191,13 +209,48 @@ class PCSX2Session:
         return self.pine.get_status()
 
     def ensure_paused(self) -> None:
-        status = self.get_status()
-        if status == PINEStatus.PAUSED:
+        if self.pine is None:
+            raise RuntimeError("PINE client is not initialized.")
+        if self.get_status() == PINEStatus.PAUSED:
             return
-        if self.input is None:
-            raise RuntimeError("Input controller is not initialized.")
-        self.input.tap_key(self.config.input.pause_hotkey)
+        self.pine.pause()
         self._wait_for_status(PINEStatus.PAUSED, timeout_seconds=5.0)
+
+    def save_state_slot(self, slot: int) -> None:
+        if self.pine is None:
+            raise RuntimeError("PINE client is not initialized.")
+        self.ensure_paused()
+        self.pine.save_state_slot(slot)
+
+    def load_state_slot(self, slot: int) -> None:
+        if self.pine is None:
+            raise RuntimeError("PINE client is not initialized.")
+        self.ensure_paused()
+        self.pine.load_state_slot(slot)
+        self._wait_for_status(PINEStatus.PAUSED, timeout_seconds=10.0)
+
+    def restore_episode_start_state(self) -> dict[str, Any] | None:
+        if self.config.savestates.episode_start_file is None:
+            return None
+        self._cache_episode_start_state()
+        game_id, game_crc = self._ensure_game_identity(timeout_seconds=30.0)
+        target = self._slot_state_path(self.config.savestates.episode_start_slot, game_id=game_id, game_crc=game_crc)
+        shutil.copy2(self.paths["episode_state_cache"], target)
+        try:
+            self.load_state_slot(self.config.savestates.episode_start_slot)
+            seeded_from_current_state = False
+        except Exception:
+            self._seed_episode_start_state_from_current_vm(target, slot=self.config.savestates.episode_start_slot)
+            self.load_state_slot(self.config.savestates.episode_start_slot)
+            seeded_from_current_state = True
+        return {
+            "game_id": game_id,
+            "game_crc": f"{game_crc:08X}",
+            "slot": self.config.savestates.episode_start_slot,
+            "source": str(self.paths["episode_state_cache"]),
+            "target": str(target),
+            "seeded_from_current_state": seeded_from_current_state,
+        }
 
     def capture_current_frame(self) -> tuple[Any, Any]:
         if self.frame_capture is None:
@@ -222,39 +275,30 @@ class PCSX2Session:
     def advance_frames(self, frame_count: int) -> dict[str, Any]:
         if frame_count < 1:
             raise ValueError("frame_count must be >= 1")
-        if self.input is None:
-            raise RuntimeError("Input controller is not initialized.")
+        if self.pine is None:
+            raise RuntimeError("PINE client is not initialized.")
 
-        profile: dict[str, Any] = {
-            "requested_frames": frame_count,
-            "advanced_frames": 0,
-            "frame_transitions_observed": 0,
-            "status_polls": 0,
-            "total_ms": 0.0,
-        }
         total_start = time.monotonic()
         self.ensure_paused()
-        for _ in range(frame_count):
-            transition = self._advance_one_frame()
-            profile["advanced_frames"] += 1
-            profile["status_polls"] += transition["polls"]
-            if transition["observed_running"]:
-                profile["frame_transitions_observed"] += 1
-            self.frame_count += 1
-        profile["total_ms"] = (time.monotonic() - total_start) * 1000.0
-        return profile
+        self.pine.frame_advance(frame_count)
+        transition = self._wait_for_frame_advance(timeout_seconds=5.0)
+        self.frame_count += frame_count
+        return {
+            "requested_frames": frame_count,
+            "advanced_frames": frame_count,
+            "frame_transitions_observed": 1 if transition["observed_running"] else 0,
+            "status_polls": transition["polls"],
+            "total_ms": (time.monotonic() - total_start) * 1000.0,
+        }
 
-    def _advance_one_frame(self) -> dict[str, Any]:
-        if self.input is None:
-            raise RuntimeError("Input controller is not initialized.")
+    def _wait_for_frame_advance(self, *, timeout_seconds: float) -> dict[str, Any]:
         observed_running = False
         polls = 0
-        self.input.tap_key(self.config.input.frame_advance_hotkey)
-        deadline = time.monotonic() + 5.0
+        deadline = time.monotonic() + timeout_seconds
         saw_initial_pause = False
         while time.monotonic() < deadline:
             if not self.is_game_alive():
-                raise RuntimeError("PCSX2 exited while advancing a frame.")
+                raise RuntimeError("PCSX2 exited while advancing frames.")
             polls += 1
             status = self.get_status()
             if status == PINEStatus.RUNNING:
@@ -274,44 +318,82 @@ class PCSX2Session:
                 raise RuntimeError("PCSX2 exited unexpectedly while waiting for status.")
             if self.get_status() == expected_status:
                 return
+            time.sleep(0.01)
         raise TimeoutError(f"Timed out waiting for PCSX2 status '{expected_status}'.")
+
+    def _wait_for_vm_ready(self, *, timeout_seconds: float) -> str:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            if not self.is_game_alive():
+                raise RuntimeError("PCSX2 exited unexpectedly while waiting for VM initialization.")
+            status = self.get_status()
+            if status in (PINEStatus.PAUSED, PINEStatus.RUNNING):
+                return status
+            time.sleep(0.05)
+        raise TimeoutError("Timed out waiting for PCSX2 VM to reach a runnable state.")
 
     def _wait_for_window(self, *, timeout_seconds: float) -> int:
         if self.pcsx2_process is None:
             raise RuntimeError("PCSX2 process is not running.")
+        if self.input is None:
+            raise RuntimeError("Input controller is not initialized.")
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
             if self.pcsx2_process.poll() is not None:
                 raise RuntimeError(
                     f"PCSX2 exited before creating a render window (exit code {self.pcsx2_process.returncode})"
                 )
-            result = subprocess.run(
-                ["xdotool", "search", "--pid", str(self.pcsx2_process.pid), "--all", "--name", ".*"],
-                capture_output=True,
-                text=True,
-                env={"DISPLAY": self.display},
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                for line in reversed(result.stdout.splitlines()):
-                    line = line.strip()
-                    if line:
-                        return int(line, 10)
+            window_id = self.input.find_window_by_pid(self.pcsx2_process.pid)
+            if window_id is not None:
+                return window_id
             time.sleep(0.25)
         raise TimeoutError(f"Timed out waiting for render window for process {self.pcsx2_process.pid} on {self.display}")
 
-    def _prepare_window(self, window_id: int) -> None:
-        env = {"DISPLAY": self.display}
-        subprocess.run(
-            ["xdotool", "windowmove", str(window_id), "0", "0"],
-            check=True,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
-        subprocess.run(
-            ["xdotool", "windowsize", str(window_id), str(self.config.capture.width), str(self.config.capture.height)],
-            check=True,
-            capture_output=True,
-            text=True,
-            env=env,
-        )
+    def _cache_episode_start_state(self) -> None:
+        source = self.config.savestates.episode_start_file
+        if source is None:
+            return
+        source_path = Path(source)
+        if not source_path.is_file():
+            raise FileNotFoundError(f"Configured episode_start_file does not exist: {source_path}")
+        cache_path = self.paths["episode_state_cache"]
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        if cache_path.exists():
+            return
+        shutil.copy2(source_path, cache_path)
+
+    def _ensure_game_identity(self, *, timeout_seconds: float) -> tuple[str, int]:
+        if self.current_game_id and self.current_game_crc is not None:
+            return self.current_game_id, self.current_game_crc
+        if self.pine is None:
+            raise RuntimeError("PINE client is not initialized.")
+        deadline = time.monotonic() + timeout_seconds
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            if not self.is_game_alive():
+                raise RuntimeError("PCSX2 exited unexpectedly while reading game metadata.")
+            try:
+                game_id = self.pine.get_game_id().strip()
+                game_crc = self.pine.get_game_crc()
+                if game_id:
+                    self.current_game_id = game_id
+                    self.current_game_crc = game_crc
+                    return game_id, game_crc
+            except Exception as exc:
+                last_error = exc
+            time.sleep(0.25)
+        detail = f" Last error: {last_error}" if last_error is not None else ""
+        raise TimeoutError(f"Timed out waiting for PCSX2 game metadata.{detail}")
+
+    def _slot_state_path(self, slot: int, *, game_id: str, game_crc: int) -> Path:
+        if self.layout is None:
+            raise RuntimeError("PCSX2 layout is not initialized.")
+        sstates_dir = self.layout.app_root / "sstates"
+        sstates_dir.mkdir(parents=True, exist_ok=True)
+        return sstates_dir / f"{game_id} ({game_crc:08X}).{slot:02d}.p2s"
+
+    def _seed_episode_start_state_from_current_vm(self, target: Path, *, slot: int) -> None:
+        self.save_state_slot(slot)
+        if not target.is_file():
+            raise FileNotFoundError(f"Expected savestate slot file was not written: {target}")
+        shutil.copy2(target, self.paths["episode_state_cache"])

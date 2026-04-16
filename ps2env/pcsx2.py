@@ -7,7 +7,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import SmokeConfig
+from .config import PS2EnvConfig
 
 
 SETTINGS_VERSION = 1
@@ -108,7 +108,7 @@ def _write_ini(path: Path, sections: OrderedDict[str, list[tuple[str, str]]]) ->
 
 def write_worker_settings(
     layout: WorkerPcsx2Layout,
-    config: SmokeConfig,
+    config: PS2EnvConfig,
     *,
     bios_file: Path,
     adapter_name: str,
@@ -167,6 +167,8 @@ def write_worker_settings(
         ("PINESlot", str(pine_slot)),
         ("SaveStateOnShutdown", "false"),
         ("BackupSavestate", "false"),
+        ("SavestateCompressionType", "0"),
+        ("SavestateCompressionRatio", "0"),
     ]
     sections["EmuCore/GS"] = [
         ("Renderer", VULKAN_RENDERER),
@@ -176,10 +178,6 @@ def write_worker_settings(
         ("Backend", "Null"),
     ]
     sections["Pad1"] = [("Type", "DualShock2"), *KEYBOARD_BINDINGS.items()]
-    sections["Hotkeys"] = [
-        ("TogglePause", f"Keyboard/{config.input.pause_hotkey}"),
-        ("FrameAdvance", f"Keyboard/{config.input.frame_advance_hotkey}"),
-    ]
     _write_ini(layout.settings_path, sections)
 
     # The runtime writes its own logs outside the portable tree, but we still

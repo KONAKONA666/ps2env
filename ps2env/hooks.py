@@ -4,7 +4,7 @@ import inspect
 from pathlib import Path
 from typing import Any
 
-from .config import SmokeConfig
+from .config import PS2EnvConfig
 from .env_types import CallbackFunction, CheckFunction, RewardFunction
 from .module_loading import load_module_from_path, resolve_python_path
 
@@ -16,7 +16,7 @@ def _iter_python_modules(directory: str | Path) -> list[Path]:
     return sorted(path for path in base.glob("*.py") if path.name != "__init__.py")
 
 
-def load_check_registry(config: SmokeConfig) -> dict[str, CheckFunction]:
+def load_check_registry(config: PS2EnvConfig) -> dict[str, CheckFunction]:
     checks: dict[str, CheckFunction] = {}
     for module_path in _iter_python_modules(config.game.checks_dir):
         module = load_module_from_path(module_path, namespace="ps2env_checks")
@@ -27,7 +27,7 @@ def load_check_registry(config: SmokeConfig) -> dict[str, CheckFunction]:
     return checks
 
 
-def load_callback_registry(config: SmokeConfig) -> dict[str, CallbackFunction]:
+def load_callback_registry(config: PS2EnvConfig) -> dict[str, CallbackFunction]:
     callbacks: dict[str, CallbackFunction] = {}
     for module_path in _iter_python_modules(config.game.callbacks_dir):
         module = load_module_from_path(module_path, namespace="ps2env_callbacks")
@@ -44,7 +44,7 @@ def load_callback_registry(config: SmokeConfig) -> dict[str, CallbackFunction]:
     return callbacks
 
 
-def resolve_check(config: SmokeConfig, reference: str | None) -> CheckFunction | None:
+def resolve_check(config: PS2EnvConfig, reference: str | None) -> CheckFunction | None:
     if not reference:
         return None
     module_path = resolve_python_path(config.game.checks_dir, reference)
@@ -55,7 +55,7 @@ def resolve_check(config: SmokeConfig, reference: str | None) -> CheckFunction |
     return check_fn
 
 
-def load_step_checks(config: SmokeConfig) -> list[tuple[str, CheckFunction]]:
+def load_step_checks(config: PS2EnvConfig) -> list[tuple[str, CheckFunction]]:
     loaded: list[tuple[str, CheckFunction]] = []
     for reference in config.game.step_checks:
         check_fn = resolve_check(config, reference)
@@ -64,7 +64,7 @@ def load_step_checks(config: SmokeConfig) -> list[tuple[str, CheckFunction]]:
     return loaded
 
 
-def load_reward_function(config: SmokeConfig) -> RewardFunction:
+def load_reward_function(config: PS2EnvConfig) -> RewardFunction:
     if not config.game.env_utils:
         return lambda ctx, info=None: 0.0
     module = load_module_from_path(config.game.env_utils, namespace="ps2env_env_utils")

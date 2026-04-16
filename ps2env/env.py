@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import random
+import hashlib
 import time
 from pathlib import Path
 from typing import Any
 
-from .capture import capture_single_frame
-from .config import SmokeConfig, load_config
-from .env_types import BaseActions, CallbackFunction, CheckFunction, EnvContext, EnvState
+from .config import PS2EnvConfig, load_config
+from .env_types import BaseActions, CheckFunction, EnvContext, EnvState
 from .gpu import discover_discrete_nvidia_adapters
 from .hooks import invoke_reward, load_callback_registry, load_check_registry, load_reward_function, load_step_checks, resolve_check
 from .policy_runtime import Policy, load_policy
@@ -17,13 +16,13 @@ from .session import PCSX2Session
 class PS2Env:
     def __init__(
         self,
-        config: SmokeConfig | str | Path,
+        config: PS2EnvConfig | str | Path,
         *,
         worker_id: int = 0,
         output_root: str | Path = "/workspace/output",
         run_id: str = "env-run",
     ) -> None:
-        self.config = config if isinstance(config, SmokeConfig) else load_config(config)
+        self.config = config if isinstance(config, PS2EnvConfig) else load_config(config)
         self.worker_id = worker_id
         self.output_root = Path(output_root)
         self.run_id = run_id
@@ -57,7 +56,7 @@ class PS2Env:
             names = ", ".join(item.value for item in allowed)
             raise RuntimeError(f"{method}() is only valid from: {names}. Current state: {self._state.value}")
 
-    def _build_info(self, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _build_info(self, extra: dict[str, Any] | None = None, *, include_frame_hash: bool = False) -> dict[str, Any]:
         info: dict[str, Any] = {
             "env_state": self._state.value,
         }
@@ -73,6 +72,8 @@ class PS2Env:
             )
             if self.ctx.last_update_profile:
                 info["ctx_update_profile"] = dict(self.ctx.last_update_profile)
+            if include_frame_hash and self.ctx.frame.size > 0:
+                info["frame_hash"] = hashlib.sha256(self.ctx.frame.tobytes()).hexdigest()
         if extra:
             info.update(extra)
         return info
@@ -184,13 +185,21 @@ class PS2Env:
         self._require_state("init", (EnvState.STARTUP,))
         try:
             self._runtime_ready()
-            assert self.ctx is not None
+            assert self.ctx is not None and self.session is not None
+            state_restore = self.session.restore_episode_start_state()
             self.ctx.reset_episode()
             self._set_state(EnvState.INITIALIZATION)
             triggered, check_info = self._wait_for_check(self._episode_check, policy=self._init_policy, stage_name="init_check")
             self._capture_and_update()
             self._set_state(EnvState.EPISODE)
-            return self.ctx.observation, self._build_info({"episode_check_triggered": triggered, "episode_check_info": check_info})
+            return self.ctx.observation, self._build_info(
+                {
+                    "episode_check_triggered": triggered,
+                    "episode_check_info": check_info,
+                    "episode_state_restore": state_restore,
+                },
+                include_frame_hash=True,
+            )
         except Exception:
             self._save_debug_artifact("init_error")
             raise
@@ -199,13 +208,21 @@ class PS2Env:
         self._require_state("reset", (EnvState.EPISODE, EnvState.TERMINATED, EnvState.TRUNCATED))
         try:
             self._runtime_ready()
-            assert self.ctx is not None
+            assert self.ctx is not None and self.session is not None
+            state_restore = self.session.restore_episode_start_state()
             self.ctx.reset_episode()
             self._set_state(EnvState.INITIALIZATION)
             triggered, check_info = self._wait_for_check(self._episode_check, policy=self._reset_policy, stage_name="reset_check")
             self._capture_and_update()
             self._set_state(EnvState.EPISODE)
-            return self.ctx.observation, self._build_info({"episode_check_triggered": triggered, "episode_check_info": check_info})
+            return self.ctx.observation, self._build_info(
+                {
+                    "episode_check_triggered": triggered,
+                    "episode_check_info": check_info,
+                    "episode_state_restore": state_restore,
+                },
+                include_frame_hash=True,
+            )
         except Exception:
             self._save_debug_artifact("reset_error")
             raise

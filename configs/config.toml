@@ -5,7 +5,7 @@ bios_file = ""
 fastboot = true
 startup_check = "startup_ready"
 episode_check = "episode_ready"
-step_checks = ["step_limit"]
+step_checks = []
 checks_dir = "../user_env/basic_ps2/checks"
 callbacks_dir = "../user_env/basic_ps2/callbacks"
 policy_dir = "../user_env/basic_ps2/policy"
@@ -28,6 +28,7 @@ game_fps = 60
 observation_shape = [180, 320]
 
 [savestates]
+episode_start_file = "/opt/ps2env/user/sstates/baseline/episode_start.p2s"
 episode_start_slot = 1
 
 [stepping]
